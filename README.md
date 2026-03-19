@@ -154,4 +154,4 @@ Then open `http://localhost:8000` in your browser.
 
 ---
 
-*Built as a portfolio project exploring deep reinforcement learning from scratch.*
+*Built as a portfolio project exploring deep reinforcement learning from scratch. Built with assistance from [Claude](https://claude.ai) (Anthropic): used as a coding assistant and debugging partner throughout development.*
