@@ -2,16 +2,13 @@
 
 > A playable Connect Four AI trained from scratch using Deep Q-Learning (Double DQN) with reward shaping and self-play. Built with TensorFlow and deployed in the browser via TensorFlow.js.
 
-🎮 **[Play it live](https://mnonino.github.io/connect-four-rl)** <!-- update this link after deploying -->
+🎮 **[Play it live](https://mnonino.github.io/connect-four-rl)**
 
 ---
 
 ## Demo
 
-<!-- Replace with your own GIF after recording a game -->
-![Gameplay demo](assets/demo.gif)
-
-![Training curves](assets/training_curves.png)
+![Gameplay demo](assets/game.gif)
 
 ---
 
