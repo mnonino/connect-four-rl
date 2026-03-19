@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Connect Four - AI Challenge</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=DM+Sans:wght@300;400;500&family=Eater&family=HennyPenny&display=swap" rel="stylesheet"/>
+<style>
+/* Here I define the colors (HEX) for the background, the board, the disks, the colors of the disks when the respective player wins*/
+  :root {
+    --bg:        #F0FDFA; /*#080c10;*/
+    --surface:   #B8E6FE;/*#0e1520;*/
+    --border:    #0a0a0a;/*#1a2535;*/
+    --board-bg:  #1447E6; /*#0a1628;*/
+    --cell-bg:   #F0FDFA;/*#060d18;*/
+    --p1:        #C11007;/*#ff4560;*/
+    --p1-glow:   rgba(255,69,96,0.6);
+    --p2:        #05DF72;/*#00d4aa;*/
+    --p2-glow:   rgba(0,212,170,0.6);
+    --text:      #435F8E;/*#e2eaf4;*/
+    --muted:     #0a0a0a;/*#4a6080;*/
+    --accent:    #2a9fff;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    overflow-x: hidden;
+  }
+
+  /* Subtle animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(42,159,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(42,159,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  /* ── Header ── */
+  header { text-align: center; }
+
+  header h1 {
+    font-family: 'Eater', cursive; /*'Orbitron', monospace;*/
+    font-weight: 900;
+    font-size: clamp(2rem, 8vw, 4rem); /*clamp(1.6rem, 5vw, 2.4rem);*/
+    letter-spacing: 0.08em;
+    background: linear-gradient(135deg, #A3B3FF 30%, #372AAC);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  header p {
+    font-family: 'HennyPenny', cursive;
+    margin-top: 0.4rem;
+    font-size: 1.0rem;/*0.82rem;*/
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* ── Score bar ── */
+  .scorebar {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.4rem;
+  }
+
+  .player-score {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .player-score.right { align-items: flex-end; }
+
+  .player-label {
+    font-family: 'HennyPenny', cursive;
+    font-size: 1rem;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+
+  .player-name {
+    font-size: 0.95rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot.p1 { background: var(--p1); box-shadow: 0 0 8px var(--p1-glow); }
+  .dot.p2 { background: var(--p2); box-shadow: 0 0 8px var(--p2-glow); }
+
+  .score-num {
+    font-family: 'HennyPenny', cursive;
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+
+  .score-num.p1 { color: var(--p1); }
+  .score-num.p2 { color: var(--p2); }
+
+  .vs-badge {
+    font-family: 'HennyPenny', cursive;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    background: var(--border);
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+  }
+
+  /* ── Status bar ── */
+  .status {
+    font-family: 'HennyPenny', cursive;
+    font-size: 1rem;
+    letter-spacing: 0.1em;
+    padding: 0.6rem 1.4rem;
+    border-radius: 30px;
+    border: 1px solid #0a0a0a; /*solid var(--border);*/
+    background: var(--surface);
+    transition: all 0.3s ease;
+    text-align: center;
+  }
+
+  .status.thinking { color: var(--p2); border-color: rgba(0,212,170,0.3); }
+  .status.your-turn { color: var(--board-bg); border-color: rgba(0, 0, 0, 1); }
+  .status.win { color: var(--p1); border-color: #E7180B; background: #FEF2F2; }
+  .status.draw { color: var(--muted); }
+  .status.loading { color: var(--accent); border-color: rgba(42,159,255,0.3); }
+
+  /* ── Board wrapper ── */
+  .board-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  /* Column hover indicators */
+  .col-hints {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    padding: 0 6px;
+    margin-bottom: 6px;
+    height: 18px;
+  }
+
+  .col-hint {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .col-hint.active { opacity: 1; }
+
+  .col-hint::after {
+    content: '▼';
+    font-size: 0.7rem;
+    color: var(--p1);
+    text-shadow: 0 0 8px var(--p1-glow);
+  }
+
+  /* Board */
+  .board {
+    background: var(--board-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    box-shadow:
+      0 0 0 1px rgba(42,159,255,0.05),
+      0 20px 60px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.03);
+    cursor: pointer;
+  }
+
+  .cell {
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--cell-bg);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.5);
+    transition: transform 0.1s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: transparent;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .cell.p1::after {
+    background: radial-gradient(circle at 35% 35%, #ff6b83, var(--p1));
+    box-shadow:
+      0 0 12px var(--p1-glow),
+      0 0 24px rgba(255,69,96,0.3),
+      inset 0 1px 2px rgba(255,255,255,0.2);
+  }
+
+  .cell.p2::after {
+    background: radial-gradient(circle at 35% 35%, #33ffcc, var(--p2));
+    box-shadow:
+      0 0 12px var(--p2-glow),
+      0 0 24px rgba(0,212,170,0.3),
+      inset 0 1px 2px rgba(255,255,255,0.2);
+  }
+
+  .cell.win-cell::after {
+    animation: pulse-win 0.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse-win {
+    from { filter: brightness(1); transform: scale(0.95); }
+    to   { filter: brightness(1.4); transform: scale(1.05); }
+  }
+
+  /* Drop animation */
+  @keyframes drop {
+    0%   { transform: translateY(-300px); opacity: 0; }
+    60%  { transform: translateY(8px); }
+    80%  { transform: translateY(-4px); }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+
+  .cell.dropping::after { animation: drop 0.35s cubic-bezier(0.4,0,0.2,1) forwards; }
+
+  /* Column hover effect */
+  .board:not(.disabled) .col-group:hover .cell:not(.p1):not(.p2) {
+    background: #0f1e30;
+  }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    gap: 0.8rem;
+  }
+
+  button {
+    font-family: 'HennyPenny', cursive;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    padding: 0.7rem 1.4rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(42,159,255,0.06);
+  }
+
+  button.primary {
+    background: rgba(42,159,255,0.1);
+    border-color: rgba(42,159,255,0.4);
+    color: var(--accent);
+  }
+
+  button.primary:hover {
+    background: rgba(42,159,255,0.18);
+    box-shadow: 0 0 16px rgba(42,159,255,0.2);
+  }
+
+  /* ── Move history strip ── */
+  .history-strip {
+    width: 100%;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-height: 24px;
+    padding: 0 2px;
+  }
+
+  .move-dot {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.55rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(0,0,0,0.7);
+    font-weight: 700;
+  }
+
+  .move-dot.p1 { background: var(--p1); }
+  .move-dot.p2 { background: var(--p2); }
+
+  /* ── Model loading overlay ── */
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8,12,16,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+  }
+
+  .loading-overlay h2 {
+    font-family: 'HennyPenny', cursive;
+    font-size: 1rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+
+  .loading-overlay p { font-size: 0.8rem; color: var(--muted); }
+
+  .spinner {
+    width: 48px; height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  
+  #winLine {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 10;  
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Footer ── */
+  footer {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <h2>LOADING AI MODEL</h2>
+  <p>Initialising neural network...</p>
+</div>
+
+<div class="container">
+  <header>
+    <h1>CONNECT FOUR</h1>
+    <p>Human vs Reinforcement Learning Agent</p>
+  </header>
+
+  <!-- Score -->
+  <div class="scorebar">
+    <div class="player-score">
+      <span class="player-label">YOU</span>
+      <div class="player-name"><span class="dot p1"></span> Player</div>
+      <span class="score-num p1" id="scoreHuman">0</span>
+    </div>
+    <div class="vs-badge">VS</div>
+    <div class="player-score right">
+      <span class="player-label">OPPONENT</span>
+      <div class="player-name" style="flex-direction:row-reverse">AI Agent <span class="dot p2"></span></div>
+      <span class="score-num p2" id="scoreAI">0</span>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status your-turn" id="status">YOUR TURN — DROP A PIECE</div>
+
+  <!-- Board -->
+  <div class="board-wrap">
+    <canvas id="winLine" style="position:absolute;top:0;left:0;pointer-events:none;z-index:10;"></canvas> <!---win line overlay-->
+    <div class="col-hints" id="colHints">
+      <!-- filled by JS -->
+    </div>
+    <div class="board" id="board">
+      <!-- filled by JS -->
+    </div>
+  </div>
+
+  <!-- Move history -->
+  <div class="history-strip" id="historyStrip"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="primary" onclick="resetGame()">NEW GAME</button>
+    <button onclick="toggleFirst()">GO SECOND</button>
+  </div>
+
+  <footer>
+    Built with TensorFlow.js · <a href="https://github.com" target="_blank">View on GitHub</a>
+  </footer>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const ROWS = 6, COLS = 7;
+const MODEL_PATH = './tfjs_model/model.json';  // ← path to your exported model
+const AI_THINK_DELAY = 800;  // ms pause so it feels like "thinking"
+
+// ── State ───────────────────────────────────────────────────────────────────
+let board, currentPlayer, gameOver, humanPlayer;
+let model = null;
+let scores = { human: 0, ai: 0 };
+let moveHistory = [];
+let humanGoesFirst = true;
+
+// ── Init ────────────────────────────────────────────────────────────────────
+async function init() {
+  buildBoardDOM();
+  resetGame();
+  await loadModel();
+}
+
+async function loadModel() {
+  try {
+    model = await tf.loadGraphModel(MODEL_PATH);
+    // Warm-up inference
+    const dummy = tf.zeros([1, 6, 7, 3]);
+    model.predict(dummy);
+    dummy.dispose();
+    document.getElementById('loadingOverlay').style.display = 'none';
+    setStatus('YOUR TURN - DROP A PIECE', 'your-turn');
+  } catch (e) {
+    console.error("Real error: ", e);
+    document.getElementById('loadingOverlay').innerHTML = '<h2 style="color:#ff4560">MODEL FAILED TO LOAD</h2>';
+  }
+}
+
+function useRandomAI() {
+  model = null;  // signals random fallback
+  document.getElementById('loadingOverlay').style.display = 'none';
+  setStatus('YOUR TURN - DROP A PIECE', 'your-turn');
+}
+
+// ── DOM builders ─────────────────────────────────────────────────────────────
+function buildBoardDOM() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.id = `cell-${r}-${c}`;
+      cell.addEventListener('mouseenter', () => hoverCol(c, true));
+      cell.addEventListener('mouseleave', () => hoverCol(c, false));
+      cell.addEventListener('click', () => humanMove(c));
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+
+// ── Game logic ───────────────────────────────────────────────────────────────
+function resetGame() {
+  // clear the canvas at the top of the resetGame
+  const canvas = document.getElementById('winLine');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+  currentPlayer = 1;
+  gameOver = false;
+  humanPlayer = humanGoesFirst ? 1 : -1;
+  moveHistory = [];
+
+  renderBoard();
+  renderHistory();
+  document.getElementById('board').classList.remove('disabled');
+
+  if (!gameOver && currentPlayer !== humanPlayer) {
+    setTimeout(aiMove, AI_THINK_DELAY);
+  } else {
+    setStatus('YOUR TURN - DROP A PIECE', 'your-turn');
+  }
+}
+
+function toggleFirst() {
+  humanGoesFirst = !humanGoesFirst;
+  document.querySelector('.controls button:nth-child(2)').textContent =
+    humanGoesFirst ? 'GO SECOND' : 'GO FIRST';
+  resetGame();
+}
+
+function validMoves() {
+  return Array.from({ length: COLS }, (_, c) => c).filter(c => board[0][c] === 0);
+}
+
+function dropPiece(col, player) {
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (board[r][col] === 0) {
+      board[r][col] = player;
+      return r;
+    }
+  }
+  return -1;
+}
+
+function checkWin(player) {
+  // Horizontal
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c <= COLS - 4; c++)
+      if ([0,1,2,3].every(i => board[r][c+i] === player))
+        return [[r,c],[r,c+1],[r,c+2],[r,c+3]];
+  // Vertical
+  for (let r = 0; r <= ROWS - 4; r++)
+    for (let c = 0; c < COLS; c++)
+      if ([0,1,2,3].every(i => board[r+i][c] === player))
+        return [[r,c],[r+1,c],[r+2,c],[r+3,c]];
+  // Diagonal /
+  for (let r = 3; r < ROWS; r++)
+    for (let c = 0; c <= COLS - 4; c++)
+      if ([0,1,2,3].every(i => board[r-i][c+i] === player))
+        return [[r,c],[r-1,c+1],[r-2,c+2],[r-3,c+3]];
+  // Diagonal \
+  for (let r = 0; r <= ROWS - 4; r++)
+    for (let c = 0; c <= COLS - 4; c++)
+      if ([0,1,2,3].every(i => board[r+i][c+i] === player))
+        return [[r,c],[r+1,c+1],[r+2,c+2],[r+3,c+3]];
+  return null;
+}
+
+// ── Human move ───────────────────────────────────────────────────────────────
+function humanMove(col) {
+  if (gameOver || currentPlayer !== humanPlayer) return;
+  if (!validMoves().includes(col)) return;
+
+  const row = dropPiece(col, humanPlayer);
+  moveHistory.push({ col, player: 'human' });
+  animateDrop(row, col, 'p1');
+  renderHistory();
+
+  const win = checkWin(humanPlayer);
+  if (win) {
+    scores.human++;
+    updateScores();
+    endGame(win, 'YOU WIN! 🎉', 'win');
+    return;
+  }
+  if (validMoves().length === 0) { endGame(null, "IT'S A DRAW", 'draw'); return; }
+
+  currentPlayer = -humanPlayer;
+  setStatus('AI THINKING...', 'thinking');
+  document.getElementById('board').classList.add('disabled');
+  setTimeout(aiMove, AI_THINK_DELAY);
+}
+
+// ── AI move ──────────────────────────────────────────────────────────────────
+async function aiMove() {
+  if (gameOver) return;
+
+  const aiPlayer = -humanPlayer;
+  let col;
+
+  if (model) {
+    col = await getModelMove(aiPlayer);
+  } else {
+    // Random fallback
+    const moves = validMoves();
+    col = moves[Math.floor(Math.random() * moves.length)];
+  }
+
+  const row = dropPiece(col, aiPlayer);
+  moveHistory.push({ col, player: 'ai' });
+  animateDrop(row, col, 'p2');
+  renderHistory();
+
+  const win = checkWin(aiPlayer);
+  if (win) {
+    scores.ai++;
+    updateScores();
+    endGame(win, 'AI WINS! 🤖', 'win');
+    return;
+  }
+  if (validMoves().length === 0) { endGame(null, "IT'S A DRAW", 'draw'); return; }
+
+  currentPlayer = humanPlayer;
+  setStatus('YOUR TURN - DROP A PIECE', 'your-turn');
+  document.getElementById('board').classList.remove('disabled');
+}
+
+async function getModelMove(aiPlayer) {
+  // Build state tensor from AI's POV
+  const state = tf.tidy(() => {
+    const s = new Float32Array(6 * 7 * 3);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = r * COLS * 3 + c * 3;
+        s[idx]   = board[r][c] === aiPlayer  ? 1 : 0;  // own pieces
+        s[idx+1] = board[r][c] === -aiPlayer ? 1 : 0;  // opponent pieces
+      }
+    }
+    // Legal moves channel
+    validMoves().forEach(c => {
+      for (let r = 0; r < ROWS; r++) s[r * COLS * 3 + c * 3 + 2] = 1;
+    });
+    return tf.tensor4d(s, [1, 6, 7, 3]);
+  });
+
+  const output = model.predict(state);
+
+  // Handle both DQN (single output) and policy/value (array output)
+  const qTensor = Array.isArray(output) ? output[0] : output;
+  const qValues = await qTensor.data();
+
+  state.dispose();
+  if (Array.isArray(output)) output.forEach(t => t.dispose());
+  else output.dispose();
+
+  // Mask illegal moves and pick best
+  const legal = validMoves();
+  let bestCol = legal[0], bestQ = -Infinity;
+  for (const c of legal) {
+    if (qValues[c] > bestQ) { bestQ = qValues[c]; bestCol = c; }
+  }
+  return bestCol;
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+function renderBoard(winCells) {
+  const winSet = new Set((winCells || []).map(([r,c]) => `${r}-${c}`));
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.getElementById(`cell-${r}-${c}`);
+      cell.className = 'cell';
+      if (board[r][c] === humanPlayer)  cell.classList.add('p1');
+      if (board[r][c] === -humanPlayer) cell.classList.add('p2');
+      if (winSet.has(`${r}-${c}`)) cell.classList.add('win-cell');
+    }
+  }
+}
+
+function animateDrop(row, col, cls) {
+  const cell = document.getElementById(`cell-${row}-${col}`);
+  cell.classList.add(cls, 'dropping');
+  cell.addEventListener('animationend', () => cell.classList.remove('dropping'), { once: true });
+}
+
+function renderHistory() {
+  const strip = document.getElementById('historyStrip');
+  strip.innerHTML = moveHistory.map((m, i) =>
+    `<div class="move-dot ${m.player === 'human' ? 'p1' : 'p2'}">${m.col}</div>`
+  ).join('');
+}
+
+function updateScores() {
+  document.getElementById('scoreHuman').textContent = scores.human;
+  document.getElementById('scoreAI').textContent = scores.ai;
+}
+
+function drawWinLine(winCells) {
+  const canvas = document.getElementById('winLine');
+  const boardEl = document.getElementById('board');
+  canvas.width = boardEl.offsetWidth;
+  canvas.height = boardEl.offsetHeight;
+  const ctx = canvas.getContext('2d');
+
+  const first = document.getElementById(`cell-${winCells[0][0]}-${winCells[0][1]}`);
+  const last  = document.getElementById(`cell-${winCells[3][0]}-${winCells[3][1]}`);
+
+  const bRect = boardEl.getBoundingClientRect();
+  const r1 = first.getBoundingClientRect();
+  const r2 = last.getBoundingClientRect();
+
+  const x1 = r1.left - bRect.left + r1.width / 2;
+  const y1 = r1.top  - bRect.top  + r1.height / 2;
+  const x2 = r2.left - bRect.left + r2.width / 2;
+  const y2 = r2.top  - bRect.top  + r2.height / 2;
+
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#ffd700';
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+function endGame(winCells, message, cls) {
+  gameOver = true;
+  renderBoard(winCells);
+  setStatus(message, cls);
+  document.getElementById('board').classList.add('disabled');
+  if (winCells) {
+        setTimeout(() => drawWinLine(winCells), 350);
+  }
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + cls;
+}
+
+function hoverCol(col, active) {
+  if (gameOver || currentPlayer !== humanPlayer) return;
+  const hint = document.getElementById(`hint-${col}`);
+  if (hint) hint.classList.toggle('active', active);
+}
+
+// ── Start ────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
